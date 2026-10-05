@@ -76,9 +76,14 @@ RETRYABLE_STATUSES = frozenset({406, 429}) | frozenset(range(500, 600))
 ERROR_RETRY_COOLDOWN = 60
 
 # User-facing error messages
-TRANSIENT_ERROR_MESSAGE = "arXiv is temporarily unavailable. Please retry in a minute."
-GENERIC_ERROR_MESSAGE = "Failed to fetch this paper from arXiv. Please retry in a minute."
-SOURCE_TOO_LARGE_MESSAGE = "This paper's source is too large for arxivbot to process."
+TRANSIENT_ERROR_MESSAGE = "arXiv isn't answering right now. Give it a minute, then try again."
+GENERIC_ERROR_MESSAGE = (
+    "ArxivBot couldn't get this paper from arXiv. Give it a minute, then try again."
+)
+SOURCE_TOO_LARGE_MESSAGE = (
+    "This paper is too big for ArxivBot to read. You can still open the PDF on arXiv."
+)
+NOT_ON_ARXIV_MESSAGE = "ArxivBot couldn't find this paper on arXiv. Check the ID and try again."
 
 # Cap concurrent arXiv source downloads
 _download_semaphore = asyncio.Semaphore(2)
@@ -355,9 +360,15 @@ def _extract_tex_from_tar(data: bytes) -> str:
 PDF_MAGIC = b"%PDF-"
 GZIP_MAGIC = b"\x1f\x8b"
 
-NO_TEX_SOURCE_MESSAGE = "arXiv has no TeX source for this paper."
-SCANNED_PDF_MESSAGE = "This paper is only available as a scanned PDF, which arxivbot can't read yet."
-UNREADABLE_PDF_MESSAGE = "This paper is only available as a PDF, and arxivbot couldn't read it."
+NO_TEX_SOURCE_MESSAGE = (
+    "arXiv doesn't have a readable version of this paper. You can still open the PDF on arXiv."
+)
+SCANNED_PDF_MESSAGE = (
+    "This paper is a scanned PDF, which ArxivBot can't read yet. You can still open it on arXiv."
+)
+UNREADABLE_PDF_MESSAGE = (
+    "This paper only comes as a PDF, and ArxivBot couldn't read it. You can still open it on arXiv."
+)
 
 
 def _as_pdf_bytes(data: bytes) -> bytes | None:
@@ -476,7 +487,7 @@ async def fetch_paper_content(paper_id: str) -> str:
         except SourceTooLargeError as e:
             raise PaperFetchError(SOURCE_TOO_LARGE_MESSAGE) from e
         if status == 404:
-            raise PaperFetchError(f"No source available for {paper_id}")
+            raise PaperFetchError(NOT_ON_ARXIV_MESSAGE)
         if status != 200:
             logger.error(f"arXiv source for {paper_id} returned HTTP {status}")
             raise PaperFetchError(GENERIC_ERROR_MESSAGE)

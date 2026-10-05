@@ -1,6 +1,7 @@
 """Tests for arXiv fetch retries and error recovery. No real network."""
 
 import asyncio
+import re
 import time
 
 import aiohttp
@@ -72,13 +73,13 @@ def test_content_length_error_then_200_succeeds(sleeps):
 def test_404_is_fatal_without_retry(sleeps):
     with aioresponses() as m:
         m.get(SRC_URL, status=404)
-        with pytest.raises(ValueError, match="No source available"):
+        with pytest.raises(ValueError, match=re.escape(paper_service.NOT_ON_ARXIV_MESSAGE)):
             fetch()
         assert request_count(m) == 1
     assert sleeps == []
     status = paper_service._indexing_status[PAPER_ID]
     assert status["status"] == "error"
-    assert "No source available" in status["error"]
+    assert status["error"] == paper_service.NOT_ON_ARXIV_MESSAGE
 
 
 def test_persistent_503_gives_up_with_friendly_error(sleeps):

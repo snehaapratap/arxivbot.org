@@ -1,6 +1,7 @@
 """Tests for indexing PDF-only arXiv submissions. No network, no LLM."""
 
 import asyncio
+import re
 import gzip
 import io
 import tarfile
@@ -109,7 +110,7 @@ def test_garbage_pdf_gives_friendly_error(monkeypatch):
 
 def test_non_pdf_without_tex_gives_friendly_error(monkeypatch):
     serve(monkeypatch, b"just some random bytes, not TeX")
-    with pytest.raises(paper_service.PaperFetchError, match="no TeX source"):
+    with pytest.raises(paper_service.PaperFetchError, match=re.escape(paper_service.NO_TEX_SOURCE_MESSAGE)):
         fetch()
     assert status()["error"] == paper_service.NO_TEX_SOURCE_MESSAGE
 
