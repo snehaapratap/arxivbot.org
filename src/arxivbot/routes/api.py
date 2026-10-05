@@ -47,7 +47,7 @@ def _user_error_message(e: Exception) -> str:
     """Error text safe to show users; hides raw LLM/provider exceptions."""
     if isinstance(e, paper_service.PaperFetchError):
         return str(e)
-    return "Something went wrong answering your question. Please try again."
+    return "Something went wrong while ArxivBot was answering. Try asking again."
 
 
 class Citation(BaseModel):
