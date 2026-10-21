@@ -44,3 +44,4 @@ external/
 # Local tool state
 .claude/settings.local.json
 .claude/worktrees/
+.beads/backup/
