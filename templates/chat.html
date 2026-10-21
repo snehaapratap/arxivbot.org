@@ -20,7 +20,7 @@
             <div class="paper-pane-content" id="paper-content">
                 <div class="paper-loading" id="paper-loading">
                     <span class="loading-spinner"></span>
-                    Loading paper...
+                    Opening the paper...
                 </div>
                 <iframe
                     id="ar5iv-iframe"
@@ -30,7 +30,7 @@
                     style="display: none;"
                 ></iframe>
                 <div class="paper-error" id="paper-error" style="display: none;">
-                    <p>HTML view unavailable for this paper.</p>
+                    <p>This paper doesn't have a web version to show here.</p>
                     <a href="https://arxiv.org/pdf/{{ paper_id }}" target="_blank" class="pdf-link">
                         View PDF on arXiv
                     </a>
@@ -77,7 +77,7 @@
                 </header>
 
                 <div id="status-banner" class="status-banner" style="display: none;">
-                    <span id="status-text">Indexing paper...</span>
+                    <span id="status-text">Reading the paper...</span>
                     <button type="button" id="status-retry-btn" class="retry-btn" style="display: none;" onclick="retryIndexing()">Retry</button>
                     <div class="progress-bar">
                         <div id="progress-fill" class="progress-fill"></div>
@@ -504,7 +504,7 @@
                     sendBtn.disabled = false;
                 } else if (data.status === 'error') {
                     statusBanner.style.display = 'block';
-                    statusText.textContent = data.error || 'Failed to load this paper.';
+                    statusText.textContent = data.error || "ArxivBot couldn't read this paper. Try again in a minute.";
                     progressFill.style.width = '0%';
                     statusRetryBtn.style.display = 'inline-block';
                     statusRetryBtn.disabled = false;
@@ -544,14 +544,26 @@
 
         function getStatusMessage(status) {
             const messages = {
-                'not_started': 'Preparing...',
-                'starting': 'Starting...',
-                'fetching': 'Fetching paper...',
-                'downloading': 'Downloading TeX source...',
-                'extracting': 'Extracting TeX files...',
-                'complete': 'Ready!'
+                'not_started': 'Getting ready...',
+                'starting': 'Getting ready...',
+                'fetching': 'Finding the paper on arXiv...',
+                'downloading': 'Getting the paper from arXiv...',
+                'extracting': 'Reading the paper...',
+                'complete': 'Ready. Ask away.'
             };
-            return messages[status] || 'Processing...';
+            return messages[status] || 'Reading the paper...';
+        }
+
+        const ANSWER_FAILED_TEXT = 'Something went wrong while ArxivBot was answering. Try asking again.';
+
+        // Turn an API error into guide-voice copy. 422/400 details are
+        // developer text, so only plain strings from 500s (already written
+        // for readers by _user_error_message) are shown as-is.
+        function requestErrorText(status, detail) {
+            if (status === 422) return "ArxivBot couldn't take that question. Try a shorter one.";
+            if (status === 404) return 'ArxivBot couldn\'t find this conversation. Start a new one from the paper page.';
+            if (status >= 500 && typeof detail === 'string' && detail) return detail;
+            return ANSWER_FAILED_TEXT;
         }
 
         function addErrorWithRetry(errorText, messageToRetry) {
@@ -627,22 +639,15 @@
 
                 if (!response.ok) {
                     if (response.status === 429) {
-                        // Rate limited - show user-friendly message
-                        const data = await response.json();
-                        const retryAfter = data.retry_after || 60;
                         loadingDiv.remove();
                         addErrorWithRetry(
-                            `Rate limited — please wait a moment before trying again.`,
+                            "That's a lot of questions at once. Give it a minute, then try again.",
                             message
                         );
                     } else {
-                        const data = await response.json();
-                        // 422 validation errors carry a list of {msg} objects
-                        const detail = Array.isArray(data.detail)
-                            ? data.detail.map(d => d.msg).join('; ')
-                            : data.detail;
+                        const data = await response.json().catch(() => ({}));
                         loadingDiv.remove();
-                        addErrorWithRetry(`Error: ${detail || 'Failed to get response'}`, message);
+                        addErrorWithRetry(requestErrorText(response.status, data.detail), message);
                     }
                     messageInput.disabled = false;
                     sendBtn.disabled = false;
@@ -703,7 +708,7 @@
                                 hasError = true;
                                 // Replace the partial response with an error + retry
                                 assistantDiv.remove();
-                                addErrorWithRetry(`Error: ${data.message}`, message);
+                                addErrorWithRetry(data.message || ANSWER_FAILED_TEXT, message);
                             }
                         }
                     }
@@ -719,7 +724,7 @@
 
             } catch (error) {
                 loadingDiv.remove();
-                addErrorWithRetry(`Error: ${error.message}`, message);
+                addErrorWithRetry(ANSWER_FAILED_TEXT, message);
             }
 
             messageInput.disabled = false;

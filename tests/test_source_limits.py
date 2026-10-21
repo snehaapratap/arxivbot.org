@@ -3,6 +3,7 @@
 import asyncio
 import gzip
 import io
+import re
 import tarfile
 
 import pytest
@@ -57,7 +58,7 @@ def test_content_length_over_cap_fails_without_retry(monkeypatch):
     monkeypatch.setattr(paper_service, "MAX_SOURCE_BYTES", 1000)
     with aioresponses() as m:
         m.get(SRC_URL, status=200, body=TEX, headers={"Content-Length": "5000"}, repeat=True)
-        with pytest.raises(paper_service.PaperFetchError, match="too large"):
+        with pytest.raises(paper_service.PaperFetchError, match=re.escape(TOO_LARGE)):
             fetch()
         assert request_count(m) == 1
     status = paper_service._indexing_status[PAPER_ID]
@@ -70,7 +71,7 @@ def test_chunked_body_over_cap_fails_without_retry(monkeypatch):
     monkeypatch.setattr(paper_service, "_READ_CHUNK_BYTES", 256)
     with aioresponses() as m:
         m.get(SRC_URL, status=200, body=b"x" * 5000, repeat=True)
-        with pytest.raises(paper_service.PaperFetchError, match="too large"):
+        with pytest.raises(paper_service.PaperFetchError, match=re.escape(TOO_LARGE)):
             fetch()
         assert request_count(m) == 1
 
@@ -88,7 +89,7 @@ def test_gzip_bomb_rejected(monkeypatch):
     bomb = gzip.compress(b"A" * (20 * 1024 * 1024))
     with aioresponses() as m:
         m.get(SRC_URL, status=200, body=bomb)
-        with pytest.raises(paper_service.PaperFetchError, match="too large"):
+        with pytest.raises(paper_service.PaperFetchError, match=re.escape(TOO_LARGE)):
             fetch()
 
 

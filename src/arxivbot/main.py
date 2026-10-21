@@ -3,7 +3,6 @@
 import logging
 from contextlib import asynccontextmanager
 
-from http import HTTPStatus
 
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import http_exception_handler
@@ -120,13 +119,9 @@ async def html_error_page_handler(request: Request, exc: StarletteHTTPException)
             show_search_link=True,
         )
     else:
-        try:
-            heading = HTTPStatus(exc.status_code).phrase
-        except ValueError:
-            heading = "Something went wrong"
         context.update(
-            heading=heading,
-            message="That did not work. You can start again with a paper ID below.",
+            heading="Something went wrong",
+            message="ArxivBot couldn't open that page. Start again with a paper ID below.",
         )
 
     return pages.templates.TemplateResponse(
