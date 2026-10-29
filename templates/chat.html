@@ -182,6 +182,8 @@
         const progressFill = document.getElementById('progress-fill');
         const statusRetryBtn = document.getElementById('status-retry-btn');
         let pendingUserEl = null;
+        let indexStartAttempts = 0;
+        let lastIndexStartAt = 0;
 
         // Paper pane elements
         const paperPane = document.getElementById('paper-pane');
@@ -497,6 +499,14 @@
                 const response = await fetch(`/api/status/${paperId}`);
                 const data = await response.json();
 
+                // A failed or rate-limited start can leave the read-only status at
+                // not_started. Give each attempt ten seconds, with two retries.
+                if (data.status === 'not_started' && Date.now() - lastIndexStartAt >= 10000) {
+                    if (indexStartAttempts < 3) return startIndexing();
+                    data.status = 'error';
+                    data.error = "ArxivBot couldn't start reading this paper. Try again.";
+                }
+
                 if (data.status === 'complete') {
                     statusBanner.style.display = 'none';
                     statusRetryBtn.style.display = 'none';
@@ -522,6 +532,8 @@
         }
 
         async function retryIndexing() {
+            indexStartAttempts = 1;
+            lastIndexStartAt = Date.now();
             statusRetryBtn.disabled = true;
             statusText.textContent = getStatusMessage('starting');
             try {
@@ -529,17 +541,19 @@
             } catch (error) {
                 console.error('Retry indexing failed:', error);
             }
-            checkStatus();
+            return checkStatus();
         }
 
         // GET /api/status is read-only; this POST is what starts indexing on page load.
         async function startIndexing() {
+            indexStartAttempts += 1;
+            lastIndexStartAt = Date.now();
             try {
                 await fetch(`/api/index/${paperId}?auto=1`, { method: 'POST' });
             } catch (error) {
                 console.error('Start indexing failed:', error);
             }
-            checkStatus();
+            return checkStatus();
         }
 
         function getStatusMessage(status) {

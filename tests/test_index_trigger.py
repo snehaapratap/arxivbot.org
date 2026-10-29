@@ -112,3 +112,94 @@ def test_abs_page_triggers_indexing_with_auto_post(client, monkeypatch, index_ca
     assert resp.status_code == 200
     assert "fetch(`/api/index/${paperId}?auto=1`, { method: 'POST' })" in resp.text
     assert index_calls == []
+
+
+@pytest.mark.parametrize("failure", ["network", "429"])
+def test_page_retries_failed_index_start_with_a_cap(failure):
+    """Run the page's polling functions with a fake clock and fetch, without HTTP."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    template = (Path(__file__).parents[1] / "templates/chat.html").read_text()
+    start = template.index("function autoResize()")
+    end = template.index("function requestErrorText(", start)
+    state_start = template.index("let indexStartAttempts =")
+    state_end = template.index("// Paper pane elements", state_start)
+    script = template[state_start:state_end] + r'''
+const assert = require('node:assert/strict');
+const paperId = '2301.00002';
+const element = () => ({style: {}, disabled: true, textContent: ''});
+const statusBanner = element(), statusText = element(), progressFill = element();
+const statusRetryBtn = element(), messageInput = element(), sendBtn = element();
+let now = 0, timers = [], posts = [], state = 'not_started', failCount = 1;
+Date.now = () => now;
+const setTimeout = (fn, delay) => timers.push({fn, at: now + delay});
+console.error = () => {};
+async function fetch(url) {
+    if (url.startsWith('/api/status/')) {
+        return {json: async () => ({status: state, progress: 0, error: null})};
+    }
+    posts.push(url);
+    if (failCount-- > 0) {
+        if (process.argv[1] === 'network') throw new Error('synthetic network failure');
+        return {ok: false, status: 429};
+    }
+    state = 'starting';
+    return {ok: true, status: 200};
+}
+const settle = () => new Promise(resolve => setImmediate(resolve));
+async function advance(target) {
+    while (timers.length && timers[0].at <= target) {
+        const timer = timers.shift();
+        now = timer.at;
+        await timer.fn();
+        await settle();
+    }
+    now = target;
+}
+''' + template[start:end] + r'''
+(async () => {
+    await startIndexing(); await settle();
+    assert.equal(posts.length, 1);
+    await advance(9999);
+    assert.equal(posts.length, 1, 'do not retry before ten seconds');
+    await advance(10000);
+    assert.equal(posts.length, 2, 'recover automatically from the failed first POST');
+    assert.equal(posts[1], `/api/index/${paperId}?auto=1`);
+    await advance(24000);
+    assert.equal(posts.length, 2, 'do not restart indexing already in progress');
+    state = 'complete';
+    await advance(26000);
+    assert.equal(statusBanner.style.display, 'none');
+    assert.equal(messageInput.disabled, false);
+    assert.equal(sendBtn.disabled, false);
+    assert.equal(timers.length, 0);
+
+    // A new page load cannot keep making automatic POSTs forever.
+    state = 'not_started'; failCount = Infinity; posts = []; timers = []; now = 0;
+    indexStartAttempts = 0; lastIndexStartAt = 0;
+    await startIndexing(); await settle();
+    await advance(30000);
+    assert.equal(posts.length, 3, 'initial attempt plus two automatic retries');
+    assert.equal(statusRetryBtn.style.display, 'inline-block');
+    assert.equal(statusRetryBtn.disabled, false);
+    assert.equal(progressFill.style.width, '0%');
+    assert.match(statusText.textContent, /try again/i);
+    assert.equal(timers.length, 0, 'stop polling when the retry budget is exhausted');
+
+    // The existing manual Retry action can recover after the automatic budget.
+    failCount = 0;
+    await retryIndexing(); await settle();
+    assert.equal(posts.at(-1), `/api/index/${paperId}`);
+    assert.equal(statusRetryBtn.style.display, 'none');
+    state = 'complete';
+    await advance(32000);
+    assert.equal(statusBanner.style.display, 'none');
+})().catch(error => { console.log(error.stack); process.exitCode = 1; });
+'''
+    result = subprocess.run([node, "-e", script, failure], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stdout + result.stderr
